@@ -279,6 +279,7 @@
    (traffic-target-status    traffic-target-status  :inline)
    (minimap                  connection-minimap)
    (other-side               symbol)
+   (tint                     vector                 :inline) ;; MOD: per-guard armor tint (draw color-mult)
    )
   (:state-methods
     get-up-front
@@ -311,6 +312,23 @@
     (crimson-guard-method-226 (_type_) none)
     )
   )
+
+;; MOD: guard color variants.
+;; Each guard picks one of these multipliers (r g b a) when it spawns and it is applied to
+;; (-> draw color-mult). Entry 0 is the vanilla look. Values above 1.0 brighten a channel.
+;; Tweak / add entries freely, then bump *guard-tint-count*.
+(define *guard-tint-palette*
+  (new 'static 'inline-array vector 6
+    (new 'static 'vector :x 1.0 :y 1.0 :z 1.0 :w 1.0)   ;; vanilla
+    (new 'static 'vector :x 0.35 :y 0.55 :z 1.6 :w 1.0) ;; blue
+    (new 'static 'vector :x 0.4 :y 1.4 :z 0.45 :w 1.0)  ;; green
+    (new 'static 'vector :x 1.1 :y 0.45 :z 1.5 :w 1.0)  ;; purple
+    (new 'static 'vector :x 0.3 :y 0.3 :z 0.35 :w 1.0)  ;; black
+    (new 'static 'vector :x 1.5 :y 1.5 :z 1.5 :w 1.0)   ;; white / bright
+    )
+  )
+
+(define *guard-tint-count* 6)
 
 
 (defmethod crimson-guard-method-218 ((this crimson-guard) (arg0 vector))
@@ -448,6 +466,13 @@
    @TODO Not extremely well understood yet"
   (let ((t9-0 (method-of-type citizen common-post)))
     (t9-0 this)
+    )
+  ;; MOD: several vanilla code paths reset color-mult to plain white (end of hit flash,
+  ;; leaving a transport...). Put this guard's tint back whenever that happens.
+  (let ((cm (-> this draw color-mult)))
+    (if (and (= (-> cm x) 1.0) (= (-> cm y) 1.0) (= (-> cm z) 1.0))
+        (set! (-> cm quad) (-> this tint quad))
+        )
     )
   (update-transforms (-> this root))
   (if (< (-> this traffic-id) *guard-min-id-hack*)
@@ -3079,7 +3104,14 @@
       )
     )
   (let ((f0-5 (fmax 0.0 (fmin 1.0 (* 3.3333333 arg0)))))
-    (set-vector! (-> this draw color-mult) f0-5 f0-5 f0-5 1.0)
+    ;; MOD: fade in towards the guard's tint instead of plain white
+    (set-vector!
+      (-> this draw color-mult)
+      (* f0-5 (-> this tint x))
+      (* f0-5 (-> this tint y))
+      (* f0-5 (-> this tint z))
+      1.0
+      )
     )
   0
   (none)
@@ -3635,7 +3667,9 @@
        )
       )
     )
-  (set-vector! (-> this draw color-mult) 1.0 1.0 1.0 1.0)
+  ;; MOD: pick a random color variant for this guard
+  (set! (-> this tint quad) (-> *guard-tint-palette* (rnd-int-count this *guard-tint-count*) quad))
+  (set! (-> this draw color-mult quad) (-> this tint quad))
   (if (logtest? (-> this controller traffic alert-state flags) (traffic-alert-flag target-jak))
       (reset-to-collide-spec
         (-> this focus)
